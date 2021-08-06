@@ -1,0 +1,147 @@
+---
+title: "Training Imbalance Data - Football data"
+output: html_notebook
+---
+
+Platform used: 
+R version 4.1.0 (2021-05-18) -- "Camp Pontanezen"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: x86_64-w64-mingw32/x64 (64-bit)
+
+Data Preparation
+
+```{r}
+setwd("~/Rohit")
+dataset = read.csv("C:/Users/rohit/Downloads/New folder (2)/Tabular Data Challenge/resources/train.csv")
+test <- read_csv("C:/Users/rohit/Downloads/New folder (2)/Tabular Data Challenge/resources/test.csv")
+install.packages('caTools')
+library(caTools)
+dataset$is_candidate <- sapply(dataset$is_candidate, as.logical)
+dataset$is_candidate <- as.numeric(dataset$is_candidate)
+set.seed(101) 
+split = sample.split(dataset$is_candidate, SplitRatio = 0.7)
+train = subset(dataset, split==T)
+valid = subset(dataset, split==F)
+```
+
+Data Exploration
+
+```{r}
+setwd("~/Rohit")
+dataset = read.csv("train.csv")
+install.packages('caTools')
+library(caTools)
+set.seed(101) 
+split = sample.split(dataset$is_candidate, SplitRatio = 0.7)
+train = subset(dataset, split==T)
+valid = subset(dataset, split==F)
+# Basic linear regression (variables were not normalized & all variables were used)
+train2 = train
+train2$is_candidate <- sapply(train2$is_candidate, as.logical)
+train2$is_candidate <- as.numeric(train2$is_candidate)
+model1 = lm(is_candidate ~ ., data = train2)
+valid2 = valid
+valid2$is_candidate <- sapply(valid2$is_candidate, as.logical)
+valid2$is_candidate <- as.numeric(valid2$is_candidate)
+valid3 = valid2[,-359]
+start_time <- Sys.time()
+predictmodel1 = predict(model1, newdata = valid3)
+end_time <- Sys.time()
+timemodel1 = end_time - start_time
+#Time difference of 0.07999492 secs
+summary(predictmodel1)
+table(valid2$is_candidate, predictmodel1>0.5)
+# Accuracy 0.2833819 for the positive class 
+#  0  9307  506
+#  1  1229  486
+X = train[,-359]
+Y = train[,359]
+# Removing variables with zero standard deviation
+StdZero = sapply(X, function(x) { sd(x) == 0} )
+# season and play_deleted have zero standard deviation 
+X <- X[, !sapply(X, function(x) { sd(x) == 0} )]
+# Removing variables with high correlation
+df = cor(X)
+hc = findCorrelation(df, cutoff=0.9)
+hc = sort(hc)
+X_reduced = X[,-c(hc)]
+# Scaling the data
+StDev = apply(X_reduced,2,sd)
+X_reduced_normalized = sweep(X_reduced,2,StDev,"/")
+X_reduced_normalized$is_candidate = Y
+# New linear model
+model2 = lm(is_candidate ~ ., data = X_reduced_normalized)
+#valid$is_candidate <- sapply(valid$is_candidate, as.logical)
+#valid$is_candidate <- as.numeric(valid$is_candidate)
+valid_reduced = subset(valid, select=-c(play_deleted,season))
+valid_reduced = valid_reduced[,-c(hc)]
+Y_valid = valid$is_candidate
+valid_reduced = valid_reduced[,-262]
+valid_reduced_normalized = sweep(valid_reduced,2,StDev,"/")
+start_time <- Sys.time()
+predictmodel2 = predict(model2, newdata = valid_reduced_normalized)
+end_time <- Sys.time()
+end_time - start_time
+#Time difference of 0.07399893 secs
+table(Y_valid, predictmodel2>0.5)
+# Accuracy 0.271137 for the positive class 
+#Y_valid FALSE TRUE
+#      0  9319  494
+#      1  1250  465
+# Logistic Regression
+model3 = glm(is_candidate ~ ., data=X_reduced_normalized, family=binomial)
+start_time <- Sys.time()
+predictmodel3 = predict(model3, type="response", newdata=valid_reduced)
+end_time <- Sys.time()
+end_time - start_time
+#Time difference of 0.09001708 secs
+table(Y_valid, predictmodel3 > 0.5)
+# Accuracy 0.9137026 for the positive class. However, there are many false positives.
+#Y_valid FALSE TRUE
+#      0  1704 8109
+#      1   148 1567
+# Random Forest
+install.packages("randomForest")
+library(randomForest)
+set.seed(101)
+X_reduced_normalized$is_candidate = as.factor(X_reduced_normalized$is_candidate)
+model4 = randomForest(is_candidate ~ ., data = X_reduced_normalized, ntree=50, nodesize=25)
+start_time = Sys.time()
+predictmodel4 = predict(model4, newdata = valid_reduced_normalized)
+end_time = Sys.time()
+end_time - start_time
+#Time difference of 0.427604
+table(Y_valid, predictmodel4)
+#       predictmodel4
+#Y_valid FALSE TRUE
+#      0  9196 617
+#      1  1108 607
+# Accuracy of 0.8504 for both the classes
+# Sensitivity of 0.3539
+# F1 score of 0.4131.
+
+########Best Performing Model Yet is Random Forest####
+#Applying the model on test data. It seems to perform well on validation data
+test_reduced = subset(test, select=-c(play_deleted,season))
+test_reduced = test_reduced[,-c(hc)]
+Y_test = test$is_candidate
+test_reduced = test_reduced[,-262]
+test_reduced_normalized = sweep(test_reduced,2,StDev,"/")
+
+#Prediction on test data set
+start_time = Sys.time()
+predictmodel4_testdata = predict(model4, newdata = test_reduced_normalized)
+end_time = Sys.time()
+end_time - start_time
+#Time difference of 0.667038
+table(Y_test, predictmodel4_testdata)
+#       predictmodel4_testdata
+#Y_valid FALSE TRUE
+#      0  7672 516
+#      1  916  503
+# Accuracy of 0.8509 for both the classes
+# Sensitivity of 0.3545
+# F1 score of 0.4126
+write.table(predictmodel4_testdata, file="C:/Users/rohit/Downloads/New folder (2)/Tabular Data Challenge/resources/Predictions.csv",sep=",")
+```
+
